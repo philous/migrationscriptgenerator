@@ -1,0 +1,11 @@
+﻿<#@ include file="..\Templates\ComparisonSummaryTemplate.tt" #>
+<#+
+public class DatabaseStructureChangesSummaryGenerator : Generator
+{
+	protected override void RunCore()
+	{
+		var summaryTemplate = new ComparisonSummaryTemplate();
+        summaryTemplate.RenderToFile(SummaryFilename);
+	}
+}
+#>

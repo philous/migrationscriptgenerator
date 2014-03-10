@@ -1,0 +1,241 @@
+﻿<#@ template language="C#" debug="True" hostspecific="True" #>
+<#@ assembly name="System" #>
+<#@ assembly name="System.Core"#>
+<#@ assembly name="System.IO"#>
+<#@ assembly name="System.Linq" #>
+
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.IO" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="MigrationScriptGenerator.TableStructure.Attributes" #>
+<#@ import namespace="System.Text" #>
+
+<#@ include file="..\..\Models\MigrationTemplateModel.ttinclude" #>
+
+<#
+    MigrationTemplate.SolutionPath = Host.ResolvePath(String.Empty);
+#>
+
+<#+
+public class MigrationTemplate : CSharpTemplate
+{
+    public static string SolutionPath;
+
+	public override string TransformText()
+	{
+		base.TransformText();
+		var model = new MigrationTemplateModel(SolutionPath);
+	    var stepNumber = 1;
+	    PrintHeader();
+	    PushIndent("\t");
+		PrintClassOpen(stepNumber.ToString(), "SchemaMigration","SchemaMigration");
+
+	    StringBuilder dataMigration;
+	    StringBuilder temporaryTableRemoval;
+	    GenerateAddRemoveModifyTables(model, out dataMigration, out temporaryTableRemoval);
+	    if (dataMigration.Length > 0)
+	    {
+	        stepNumber++;
+			PrintClassClose();
+
+	        WriteLine(string.Empty);
+			PrintClassOpen(stepNumber.ToString(), "DataMigration","DataMigration");
+		    Write(dataMigration.ToString());
+			PrintClassClose();
+
+			stepNumber++;
+			WriteLine(string.Empty);
+			PrintClassOpen(stepNumber.ToString(), "SchemaMigration","SchemaMigration");
+			
+			WriteLine("//Removing temporary tables");
+			Write(temporaryTableRemoval.ToString());
+	        
+			GenerateRenameTablesBlock(model);
+
+			PrintClassClose();
+	        PrintFooter();
+
+			return this.GenerationEnvironment.ToString();
+	    }
+		
+		GenerateRenameTablesBlock(model);
+		PrintClassClose();
+	    PrintFooter();
+
+	    return this.GenerationEnvironment.ToString();
+	}
+
+
+
+    private void GenerateAddRemoveModifyTables(MigrationTemplateModel model, out StringBuilder dataMigration, out StringBuilder temporaryTableRemoval)
+    {
+		WriteLine("var columns = new List<FluentColumn>();");
+		WriteLine(string.Empty);
+		WriteLine("//Tables");
+		WriteLine("//Remove");
+
+		var removedTables = model.GetEntities(EntityType.Removed);
+		foreach (var type in removedTables)
+		{
+		    WriteLine("Remove.Table(\"{0}\");", model.GetEntityName(type.Name));
+		}
+
+		WriteLine(string.Empty);
+		WriteLine("//Add");
+		var addedTables = model.GetEntities(EntityType.Added);
+
+		
+		foreach (var type in addedTables)
+		{
+		    WriteLine(string.Empty);
+			WriteLine("//Adding table {0}", model.GetEntityName(type.Name));    
+			WriteLine("columns.Clear();");    
+		    var properties = type.GetProperties().Where(x => x.GetCustomAttributes<AddAttribute>().Any());
+
+			foreach (var propertyInfo in properties)
+			{
+			    WriteLine("columns.Add({0}{1});", model.GetSqlTypeByClrType(propertyInfo), model.IsPrimaryKey(propertyInfo));
+			}
+		    WriteLine("Add.Table(\"{0}\").WithColumns(columns.ToArray());", model.GetEntityName(type.Name));
+		}
+
+
+	    var modifiedTables = model.GetEntities(EntityType.Modified).ToList();
+	    dataMigration = new StringBuilder();
+
+        if (modifiedTables.Count > 0)
+        {
+			WriteLine(string.Empty);
+			WriteLine("//Modify");
+            dataMigration.AppendLine("ResultSet data;");
+			dataMigration.AppendLine();
+        }
+
+	    temporaryTableRemoval = new StringBuilder();
+
+		foreach (var type in modifiedTables)
+		{
+		    var entityName = model.GetEntityName(type.Name);
+		    var tempTableName = "_" + entityName;
+		    WriteLine(string.Empty);
+			WriteLine("//Setting up structure for {0}", entityName);
+			WriteLine("Rename.Table(\"{0}\").To(\"{1}\");", entityName, tempTableName);
+
+			var newTableStructure = type.GetProperties().Where(x => x.GetCustomAttributes<AddAttribute>().Any() || !x.GetCustomAttributes().Any()).ToList();
+			WriteLine("columns.Clear();");
+			foreach (var propertyInfo in newTableStructure)
+			{
+			    WriteLine("columns.Add({0}{1});", model.GetSqlTypeByClrType(propertyInfo), model.IsPrimaryKey(propertyInfo));
+			}
+
+			var renamedColumns = type.GetProperties().Where(x => x.GetCustomAttributes<RenameAttribute>().Any()).ToList();
+			foreach (var propertyInfo in renamedColumns)
+			{
+				WriteLine("columns.Add({0}){1};", model.GetSqlTypeByClrType(propertyInfo, true), model.IsPrimaryKey(propertyInfo));
+			}
+
+			WriteLine("Add.Table(\"{0}\").WithColumns(columns.ToArray());",entityName);
+
+		    dataMigration.AppendLine(string.Format("//Data migration for table {0}", entityName));
+		    dataMigration.AppendLine(string.Format("data = Select.AllColumns().From(\"{0}\").AllRows();", tempTableName));
+			
+			var columnsToInsert = type.GetProperties().Where(x => !x.GetCustomAttributes().Any()).Select(x => x.Name).ToList();
+		    var columnString = new StringBuilder();
+			var valueString = new StringBuilder();
+
+		    var delimiter = string.Empty;
+			foreach (var s in columnsToInsert)
+			{
+			    columnString.Append(delimiter);
+			    columnString.AppendFormat("\"{0}\"", s);
+
+			    valueString.Append(delimiter);
+			    valueString.AppendFormat("tableRow[\"{0}\"]", s);
+
+			    delimiter = ",";
+			}
+
+		    if (columnString.Length == 0)
+		    {
+		        delimiter = String.Empty;
+		    }
+			foreach (var renamedColumn in renamedColumns)
+			{
+			    var attr = renamedColumn.GetCustomAttribute<RenameAttribute>();
+
+				columnString.Append(delimiter);
+			    columnString.AppendFormat("\"{0}\"", attr.NewName);
+
+			    valueString.Append(delimiter);
+			    valueString.AppendFormat("tableRow[\"{0}\"]", renamedColumn.Name);
+
+				delimiter = ",";
+			}
+
+		    dataMigration.AppendLine("foreach (var tableRow in data)");
+		    dataMigration.AppendLine("{");
+			dataMigration.AppendLine(string.Format("\t Insert.Into(\"{0}\").Columns({1}).Values({2});", entityName, columnString, valueString));
+			dataMigration.AppendLine("}");
+			dataMigration.AppendLine(string.Empty);
+
+			temporaryTableRemoval.AppendLine(string.Format("Remove.Table(\"{0}\");", tempTableName));
+		}
+    }
+
+    private void GenerateRenameTablesBlock(MigrationTemplateModel model)
+    {
+		WriteLine(string.Empty);
+		WriteLine("//Rename");
+	    var renamedTables = model.GetEntities(EntityType.Renamed);
+		foreach (var type in renamedTables)
+		{
+		    var attr = type.GetCustomAttributes<RenameAttribute>().Single();
+			WriteLine("Rename.Table(\"{0}\").To(\"{1}\");", model.GetEntityName(type.Name), attr.NewName);
+		}
+    }
+
+    private void PrintFooter()
+    {
+        PopIndent();
+		WriteLine("}");
+    }
+
+	private void PrintHeader()
+    {
+        WriteLine("using System.Collections.Generic;");
+		WriteLine("using Sharp.Data;");
+	    WriteLine("using Sharp.Data.Schema;");
+	    WriteLine("using Sharp.Migrations;");
+
+		WriteLine("namespace Migration"); 
+		WriteLine("{");
+    }
+
+    private void PrintClassOpen(string stepNumber, string className, string classType)
+    {
+		WriteLine("public class _{0}{1} : {2}", stepNumber, className, classType);
+	    WriteLine("{");
+
+		PushIndent("\t");
+	    WriteLine("public override void Up()");
+	    WriteLine("{");
+
+		PushIndent("\t");
+    }
+
+    private void PrintClassClose()
+    {
+		PopIndent();
+		WriteLine("}");
+
+	    WriteLine("public override void Down()");
+	    WriteLine("{");
+		PushIndent("\t");
+	    WriteLine("//This part is not generated automatically");
+		PopIndent();
+		WriteLine("}");
+		PopIndent();
+		WriteLine("}");
+    }
+}
+#>

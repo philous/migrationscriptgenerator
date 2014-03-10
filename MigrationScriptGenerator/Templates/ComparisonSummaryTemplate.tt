@@ -1,0 +1,98 @@
+﻿<#@ template language="C#" debug="True" hostspecific="True" #>
+<#@ output extension="cs" #>
+<#@ assembly name="System" #>
+<#@ assembly name="System.Core"#>
+<#@ assembly name="System.Linq" #>
+<#@ assembly name="envdte" #>
+
+<#@ import namespace="MigrationScriptGenerator.TableStructure.Actions" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ include file="..\Models\ComparisonSummaryTemplateModel.ttinclude" #>
+
+<#@ import namespace="EnvDTE" #>
+
+<#
+    ComparisonSummaryTemplate.SolutionPath = Host.ResolvePath(String.Empty);
+#>
+
+<#+
+
+public class ComparisonSummaryTemplate : CSharpTemplate
+{
+    public static string SolutionPath;
+	
+	public override string TransformText()
+	{
+		base.TransformText();
+	    var model = new ComparisonSummaryTemplateModel(SolutionPath);
+	    var summary = model.GetSummary();
+	    
+		WriteLine("using MigrationScriptGenerator.TableStructure.Attributes;");
+		WriteLine(String.Empty);
+		WriteLine("namespace {0} {{", SummaryNamespace);
+		foreach (var tbl in summary.Where(x => x.Action == TableAction.Remove))
+		{
+			PushIndent("\t");
+			WriteLine("[Remove]");
+			WriteLine("public interface {0} {{}}", model.GetInterfaceName(tbl.Name));
+			PopIndent();
+			WriteLine(String.Empty);
+		}
+
+		foreach (var tbl in summary.Where(x => x.Action == TableAction.Add))
+		{
+			PushIndent("\t");
+			WriteLine("[Add]");
+			WriteLine("public interface {0} {{", model.GetInterfaceName(tbl.Name));
+			foreach (var column in tbl.Columns)
+			{
+				PushIndent("\t");
+				WriteLine("[Add]");
+				WriteLine("{0} {1} {{ get; set; }}", column.Type, column.Name);
+				PopIndent();
+			}
+			WriteLine("}");
+			PopIndent();
+			WriteLine(String.Empty);
+		}
+
+		foreach (var tbl in summary.Where(x => x.Action == TableAction.Modify))
+		{
+			PushIndent("\t");
+			WriteLine("[Modify]");
+			WriteLine("public interface {0} {{", model.GetInterfaceName(tbl.Name));
+			foreach (var column in tbl.Columns.Where(x => x.ColumnAction == ColumnAction.Add))
+			{
+				PushIndent("\t");
+				WriteLine("[Add]");
+				WriteLine("{0} {1} {{ get; set; }}", column.Type, column.Name);
+				PopIndent();
+			}
+
+			foreach (var column in tbl.Columns.Where(x => x.ColumnAction == ColumnAction.Remove))
+			{
+				PushIndent("\t");
+				WriteLine("[Remove]");
+				WriteLine("{0} {1} {{ get; set; }}", column.Type, column.Name);
+				PopIndent();
+			}
+
+			foreach (var column in tbl.Columns.Where(x => x.ColumnAction == ColumnAction.None))
+			{
+				PushIndent("\t");
+				WriteLine("{0} {1} {{ get; set; }}", column.Type, column.Name);
+				PopIndent();
+			}
+
+			WriteLine("}");
+			PopIndent();
+			WriteLine(String.Empty);
+		}
+		WriteLine("}");
+
+
+        return this.GenerationEnvironment.ToString();
+	}
+}
+#>

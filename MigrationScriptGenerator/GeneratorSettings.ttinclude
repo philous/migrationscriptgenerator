@@ -1,0 +1,52 @@
+﻿<#@ import namespace="System.Collections.Generic" #>
+
+
+<#+
+	const string OriginalDatabaseName = "Spaces_org.db";
+    const string OriginalNamespace = "DatabaseStructure.Original";
+    const string OriginalFilename = "DatabaseStructure.Original.cs";
+
+	const string ModifiedDatabaseName = "Spaces_mod.db";
+    const string ModifiedNamespace = "DatabaseStructure.Modified";
+    const string ModifiedFilename = "DatabaseStructure.Modified.cs";
+
+    const string SummaryNamespace = "DatabaseStructure.Summary";
+	const string SummaryFilename = "DatabaseStructure.Summary.cs";
+
+    const string MigrationFilename = "MigrationScript.cs";
+
+    public static class Settings
+    {
+        public static List<string> ExclusionList
+        {
+            get
+            {
+                return new List<string> { "sqlite_sequence" };
+            }
+        }
+
+        public static List<string> IdColumnNames
+        {
+            get 
+			{ 
+				return new List<string> { "id" };
+			}
+        }
+
+        public static string DatabaseSnapshotEntityPrefix
+        {
+            get
+            {
+                return "IS_";
+            }
+        }
+
+        public static string ComparisonSummaryEntityPrefix
+        {
+            get
+            {
+                return "IC_";
+            }
+        }
+    }
+#>

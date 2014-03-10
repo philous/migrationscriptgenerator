@@ -1,0 +1,145 @@
+﻿<#@ assembly name="System.Core"#>
+<#@ assembly name="System.Linq" #>
+<#@ assembly name="$(ProjectDir)lib\MigrationScriptGenerator.dll" #>
+
+<#@ import namespace="MigrationScriptGenerator.TableStructure" #>
+<#@ import namespace="MigrationScriptGenerator.TableStructure.Actions" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Reflection" #>
+<#@ import namespace="System.Collections.Generic" #>
+
+<#@ include file="..\Utils\CoreUtils.ttinclude" #>
+<#@ include file="..\GeneratorSettings.ttinclude" #>
+
+<#+
+	public class ComparisonSummaryTemplateModel
+	{
+		private List<Table> modifiedStructure;
+		private List<Table> originalStructure;
+	    private string solutionPath;
+
+	    public ComparisonSummaryTemplateModel(string solutionPath)
+	    {
+	        this.solutionPath = solutionPath;
+	    }
+
+		public string GetInterfaceName(string name)
+		{
+			var entityName = name.Replace(Settings.DatabaseSnapshotEntityPrefix, string.Empty);
+			return "IC_" + entityName;
+		}
+
+		private List<Table> GetDatabaseStructure(string forNamespace, Assembly compiledAssembly)
+		{
+			var structure = new List<Table>();
+			var types = compiledAssembly
+				.GetTypes()
+				.Where(x => x.IsInterface && x.Namespace == forNamespace);
+
+			foreach (var type in types)
+			{
+				var table = new Table(type.Name);
+				structure.Add(table);
+
+				var properties = type.GetProperties();
+				foreach (var propertyInfo in properties)
+				{
+					table.AddColumn(new Column(propertyInfo.Name, propertyInfo.PropertyType.ToString()));
+				}
+			}
+
+			return structure;
+		}
+
+		private IEnumerable<Table> GetRemovedTables()
+		{
+			foreach (var table in originalStructure)
+			{
+				if (modifiedStructure.Any(x => x.Name == table.Name))
+				{
+					continue;
+				}
+
+				yield return new Table(table.Name, TableAction.Remove);
+			}
+		}
+
+		private IEnumerable<Table> GetAddedTables()
+		{
+			foreach (var table in modifiedStructure)
+			{
+				if (originalStructure.Any(x => x.Name == table.Name))
+				{
+					continue;
+				}
+
+			    var tbl = new Table(table.Name, TableAction.Add);
+				tbl.AddColumn(table.Columns);
+
+				yield return tbl;
+			}
+		}
+
+		private IEnumerable<Table> GetModifiedTables(List<Table> summary)
+		{
+			var result = new List<Table>();
+			foreach (var table in modifiedStructure)
+			{
+				if (summary.Any(x => x.Name == table.Name))
+				{
+					continue;
+				}
+
+				var originalTable = originalStructure.Single(x => x.Name == table.Name);
+
+				var modifiedTable = new Table(table.Name, TableAction.Modify);
+
+				foreach (var column in originalTable.Columns)
+				{
+					var col = new Column(column.Name, column.Type);
+					if (table.Columns.All(x => x.Name != column.Name))
+					{
+						col.ColumnAction = ColumnAction.Remove;
+					}
+
+				    modifiedTable.AddColumn(col);
+				}
+
+				foreach (var column in table.Columns)
+				{
+					var col = new Column(column.Name, column.Type);
+					if (originalTable.Columns.Any(x => x.Name == column.Name))
+					{
+						continue;
+					}
+					col.ColumnAction = ColumnAction.Add;
+					modifiedTable.AddColumn(col);
+				}
+
+				if (modifiedTable.Columns.Any(x => x.ColumnAction != ColumnAction.None))
+				{
+					result.Add(modifiedTable);
+				}
+			}
+
+		    return result;
+		}
+
+		public List<Table> GetSummary()
+		{
+			var result = LoadScript(Enumerable.Empty<string>(), Path.Combine(solutionPath, "DatabaseStructure.Modified.cs"),
+				Path.Combine(solutionPath, "DatabaseStructure.Original.cs"));
+
+			originalStructure = GetDatabaseStructure(OriginalNamespace, result.CompiledAssembly);
+			modifiedStructure = GetDatabaseStructure(ModifiedNamespace, result.CompiledAssembly);
+
+			var summary = new List<Table>();
+
+			summary.AddRange(GetRemovedTables());
+			summary.AddRange(GetAddedTables());
+			summary.AddRange(GetModifiedTables(summary));
+
+		    return summary;
+		}
+	}
+#>

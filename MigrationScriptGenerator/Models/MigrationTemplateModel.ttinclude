@@ -1,0 +1,109 @@
+﻿<#@ assembly name="System.Core"#>
+<#@ assembly name="System.Linq" #>
+<#@ assembly name="$(ProjectDir)lib\MigrationScriptGenerator.dll" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Reflection" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="MigrationScriptGenerator.TableStructure.Attributes" #>
+
+<#@ include file="..\GeneratorSettings.ttinclude" #>
+<#@ include file="..\Utils\CoreUtils.ttinclude" #>
+
+
+<#+
+
+	public enum EntityType
+	{
+	    Added,
+		Removed,
+		Renamed,
+		Modified
+	}
+
+    public class MigrationTemplateModel
+    {
+        private readonly string solutionPath;
+        private CompilerResults result;
+
+        public MigrationTemplateModel(string solutionPath)
+        {
+            this.solutionPath = solutionPath;
+
+			var assPath = Path.Combine(solutionPath, @"lib\MigrationScriptGenerator.dll");
+			result = LoadScript(new List<string>{assPath}, Path.Combine(solutionPath,SummaryFilename));
+        }
+
+        public IEnumerable<Type> GetEntities(EntityType type)
+        {
+            switch (type)
+            {
+				case EntityType.Added:
+					return result.CompiledAssembly.GetTypes().Where(x => x.IsInterface && x.GetCustomAttributes<AddAttribute>().Any());
+				case EntityType.Removed:
+					return result.CompiledAssembly.GetTypes().Where(x => x.IsInterface && x.GetCustomAttributes<RemoveAttribute>().Any());
+				case EntityType.Renamed:
+					return result.CompiledAssembly.GetTypes().Where(x => x.IsInterface && x.GetCustomAttributes<RenameAttribute>().Any());
+				case EntityType.Modified:
+					return result.CompiledAssembly.GetTypes().Where(x => x.IsInterface && x.GetCustomAttributes<ModifyAttribute>().Any());
+            }
+            return Enumerable.Empty<Type>();
+        }
+
+        public string GetSqlTypeByClrType(PropertyInfo propertyInfo, bool renamed = false)
+		{
+			var propertyType = propertyInfo.PropertyType.FullName;
+			var result = string.Empty;
+		    var name = propertyInfo.Name;
+
+		    if (renamed)
+		    {
+		        var attr = propertyInfo.GetCustomAttribute<RenameAttribute>();
+		        name = attr.NewName;
+		    }
+			
+			switch (propertyType)
+			{
+				case "System.Int16":
+					result = string.Format("Column.Int16(\"{0}\")", name);
+					break;
+				case "System.Int32":
+					result = string.Format("Column.Int32(\"{0}\")", name);
+					break;
+				case "System.Int64":
+					result = string.Format("Column.Int64(\"{0}\")", name);
+					break;
+				case "System.String":
+					result = string.Format("Column.String(\"{0}\",140)", name);
+					break;
+				case "System.Single":
+					result = string.Format("Column.Single(\"{0}\")", name);
+					break;
+				case "System.Double":
+					result = string.Format("Column.Double(\"{0})\"", name);
+					break;
+				case "System.Decimal":
+					result = string.Format("Column.Decimal(\"{0})\"", name);
+					break;
+				case "System.Boolean":
+					result = string.Format("Column.Boolean(\"{0})\"", name);
+					break;
+				case "System.DateTime":
+					result = string.Format("Column.Date(\"{0}\")", name);
+					break;
+			}
+
+			return result;
+		}
+
+		public string IsPrimaryKey(PropertyInfo propertyInfo)
+		{
+			return Settings.IdColumnNames.Any(x => x.ToUpper() == propertyInfo.Name.ToUpper()) ? ".AsPrimaryKey()" : String.Empty;	
+		}
+
+		public string GetEntityName(string name)
+		{
+			return name.Replace(Settings.ComparisonSummaryEntityPrefix, string.Empty);
+		}        
+    }
+
+#>

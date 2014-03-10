@@ -1,0 +1,8 @@
+<#@ template language="C#" debug="True" #>
+<#@ output extension="txt" #>
+<#@ include file="T4Toolbox.tt" #>
+<#@ include file="Generators\MigrationTemplateGenerator.tt" #>
+<#
+	var migrationScriptGenerator = new MigrationScriptGenerator();
+	migrationScriptGenerator.Run();
+#>

@@ -1,0 +1,57 @@
+﻿<#@ assembly name="System.Data" #>
+<#@ assembly name="System.Xml" #>
+<#@ assembly name="System.Data.SQLite" #>
+<#@ assembly name="System.Linq" #>
+<#@ assembly name="System.Core" #>
+<#@ assembly name="envdte" #>
+<#@ import namespace="System.CodeDom.Compiler" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.Data" #>
+<#@ import namespace="System.Data.SQLite" #>
+
+
+<#@ include file="..\Models\DatabaseSnapshotTemplateModel.ttinclude" #>
+
+<#@ import namespace="EnvDTE" #>
+
+<#
+    DatabaseSnapshotTemplate.SolutionPath = Host.ResolvePath(String.Empty);
+#>
+
+<#+
+public class DatabaseSnapshotTemplate : CSharpTemplate
+{
+	public static string SolutionPath;
+
+	// Settings
+    public static string Namespace = "DatabaseScheme.Default";
+    public static string DatabaseName;
+
+	public override string TransformText()
+	{
+		base.TransformText();
+		var connectionString = string.Format(@"Data Source={0}", Path.Combine(SolutionPath, DatabaseName));
+	    var model = new DatabaseSnapshotTemplateModel(connectionString);
+        var tables = model.GetListTables();
+
+        WriteLine(string.Format("namespace {0} {{", Namespace));
+        foreach(var table in tables){
+            PushIndent("\t");
+            WriteLine(string.Format("public interface {0} {{", model.GetInterfaceName(table)));
+
+            var columns = model.GetColumnListForTable(table);
+
+            foreach(var column in columns){
+                PushIndent("\t");
+                WriteLine(string.Format("{0} {1} {{ get; set; }}", model.GetClrTypeBySqlType(column.Item2),  column.Item1));
+                PopIndent();
+            }
+            WriteLine("}");
+            WriteLine(string.Empty);
+            PopIndent();
+        }
+        WriteLine("}");
+        return this.GenerationEnvironment.ToString();
+	}
+}
+#>

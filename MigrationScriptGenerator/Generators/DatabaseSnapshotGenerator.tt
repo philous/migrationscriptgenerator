@@ -1,0 +1,19 @@
+﻿<#@ include file="..\Templates\DatabaseSnapshotTemplate.tt" #>
+<#+
+
+public class DatabaseStructureGenerator : Generator
+{
+	protected override void RunCore()
+	{
+        var snapshotTemplate = new DatabaseSnapshotTemplate();
+		
+        DatabaseSnapshotTemplate.Namespace = OriginalNamespace;
+        DatabaseSnapshotTemplate.DatabaseName = OriginalDatabaseName;
+        snapshotTemplate.RenderToFile(OriginalFilename);
+
+        DatabaseSnapshotTemplate.Namespace = ModifiedNamespace;
+        DatabaseSnapshotTemplate.DatabaseName = ModifiedDatabaseName;
+        snapshotTemplate.RenderToFile(ModifiedFilename);
+	}
+}
+#>

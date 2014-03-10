@@ -1,0 +1,11 @@
+﻿<#@ include file="..\Templates\Migration\MigrationTemplate.tt" #>
+<#+
+public class MigrationScriptGenerator : Generator
+{
+	protected override void RunCore()
+	{
+        var migration = new MigrationTemplate();
+	    migration.RenderToFile(MigrationFilename);
+	}
+}
+#>

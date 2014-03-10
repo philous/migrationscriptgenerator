@@ -1,0 +1,10 @@
+<#@ template language="C#" debug="True" hostspecific="True" #>
+<#@ output extension="txt" #>
+
+<#@ include file="T4Toolbox.tt"#>
+
+<#@ include file="Generators\DatabaseSnapshotGenerator.tt" #>
+<#
+	var structGenerator = new DatabaseStructureGenerator();
+	structGenerator.Run();
+#>

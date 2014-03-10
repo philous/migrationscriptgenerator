@@ -1,0 +1,101 @@
+﻿<#@ assembly name="System.Data" #>
+<#@ assembly name="System.Xml" #>
+<#@ assembly name="System.Data.SQLite" #>
+<#@ assembly name="System.Linq" #>
+<#@ assembly name="System.Core" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.Data" #>
+<#@ import namespace="System.Data.SQLite" #>
+<#@ import namespace="System.IO" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Reflection" #>
+
+<#@ include file="..\GeneratorSettings.ttinclude" #>
+
+<#+
+	public class DatabaseSnapshotTemplateModel
+	{
+	    private string connectionString;
+	    public DatabaseSnapshotTemplateModel(string connectionString)
+	    {
+	        this.connectionString = connectionString;
+	    }
+
+		public List<string> GetListTables()
+		{
+			var tables = new List<string>();
+			using (var con = new SQLiteConnection(connectionString))
+			{ 
+				con.Open();
+				var dt = con.GetSchema("Tables");
+
+				foreach (DataRow row in dt.Rows)
+				{
+					var tablename = (string)row[2];
+					if (Settings.ExclusionList.Contains(tablename)){
+						continue;
+					}
+					tables.Add(tablename);
+				}
+				con.Close();
+			}
+
+			return tables;
+		}
+
+		public List<Tuple<string, string>> GetColumnListForTable(string table)
+		{
+			var columns = new List<Tuple<string, string>>();
+
+			using (var con = new SQLiteConnection(connectionString))
+			{ 
+				con.Open();
+				var dt = con.GetSchema("Columns");
+
+				foreach (DataRow row in dt.Rows)
+				{
+					var tablename = (string)row[2];
+					if (!tablename.Equals(table)){
+						continue;
+					}
+					columns.Add(Tuple.Create((string)row[3], (string)row[11]));
+				}
+				con.Close();
+			}
+
+			return columns;
+		}
+
+		public string GetInterfaceName(string name)
+		{
+			return Settings.DatabaseSnapshotEntityPrefix + name;
+		}
+
+		public string GetClrTypeBySqlType(string sqlType)
+		{
+			var sysType="System.String";
+			switch (sqlType.ToLower())
+			{
+				case "integer":
+					sysType = "System.Int32";
+					break;
+				case "bigint":
+					sysType = "System.Int64";
+					break;
+				case "float":
+					sysType = "System.Single";
+					break;
+				case "varchar":
+					sysType = "System.String";
+					break;
+				case "datetime":
+					sysType = "System.DateTime";
+					break;
+				case "blob":
+					sysType = "System.Byte[]";
+					break;
+			}
+			return sysType;
+		 }
+	}
+#>

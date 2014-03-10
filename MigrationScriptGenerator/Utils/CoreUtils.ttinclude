@@ -1,0 +1,32 @@
+﻿<#@ assembly name="System.Core"#>
+<#@ assembly name="System.Linq" #>
+
+<#@ import namespace="System.CodeDom.Compiler" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.IO" #>
+<#@ import namespace="System.Linq" #>
+
+<#+
+	public static CompilerResults LoadScript(IEnumerable<string> assemblies, params string[] filepath)
+	{
+		var language = CodeDomProvider.GetLanguageFromExtension(Path.GetExtension(filepath[0]));
+		var codeDomProvider = CodeDomProvider.CreateProvider(language);
+		var compilerParams = new CompilerParameters
+		{
+			GenerateExecutable = false,
+			GenerateInMemory = true,
+			IncludeDebugInformation = false
+		};
+
+		compilerParams.ReferencedAssemblies.Add("System.dll");
+	    if (assemblies != null && assemblies.Any())
+	    {
+	        foreach (var assembly in assemblies)
+	        {
+	            compilerParams.ReferencedAssemblies.Add(assembly);
+	        }
+	    }
+
+		return codeDomProvider.CompileAssemblyFromFile(compilerParams, filepath);
+	}
+#>
